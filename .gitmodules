@@ -1,0 +1,3 @@
+[submodule "smtp-sts"]
+	path = smtp-sts
+	url = git://github.com/mrisher/smtp-sts.git
