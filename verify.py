@@ -119,8 +119,16 @@ class SmtpSts(object): # {{{
         self.mx_records = mx_records
         self.verbose    = verbose
         self.output     =''
-
         self.__cachedb  = sqlite3.connect(cachedb_file)
+
+        # create sqlitedb
+        try:
+            c = self.__cachedb.cursor()
+            c.execute('CREATE TABLE sts_cache (domain text, sts_record text, timestamp int)')
+            self.__cachedb.commit()
+        except:
+            pass
+
 
     def policy_from_cache(self):
         """get the policy from the cache"""
