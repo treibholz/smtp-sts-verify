@@ -23,6 +23,7 @@ class StsPolicy(object): # {{{
 
         self.cached_since   = cached_since
         self.now            = int(time.time())
+        self.expires        = 0
         self.domain         = domain
         self.sts_record     = unicode(sts_record)
         self.via_dnssec     = dnssec
@@ -78,6 +79,7 @@ class StsPolicy(object): # {{{
 
         # e: Max lifetime of the policy (plain-text integer seconds)
         self.e = int(record['e'])
+        self.expires = self.now + self.e
 
         # mx: MX patterns (comma-separated list of plain-text MX match patterns)
         self.mx = record['mx'].split(',')
@@ -118,14 +120,15 @@ class SmtpSts(object): # {{{
         self.sts_record = sts_record
         self.mx_records = mx_records
         self.verbose    = verbose
-        self.output     =''
+        self.output     = ''
         self.__cachedb  = sqlite3.connect(cachedb_file)
 
         # create sqlitedb
         try:
             c = self.__cachedb.cursor()
-            c.execute('CREATE TABLE sts_cache (domain text, sts_record text, timestamp int)')
+            c.execute('CREATE TABLE sts_cache (domain text, tls_only text, sts_record text, expires int)')
             self.__cachedb.commit()
+            print "created DB"
         except:
             pass
 
@@ -134,7 +137,7 @@ class SmtpSts(object): # {{{
         """get the policy from the cache"""
         p = False
         c = self.__cachedb.cursor()
-        c.execute('SELECT sts_record, timestamp FROM sts_cache WHERE domain=?', ( self.domain, ))
+        c.execute('SELECT sts_record, expires FROM sts_cache WHERE domain=?', ( self.domain, ))
         result = c.fetchone()
         if result:
             p = StsPolicy( domain = self.domain, sts_record = result[0], cached_since = result[1] )
@@ -144,10 +147,12 @@ class SmtpSts(object): # {{{
     def cache(self, policy):
         """cache this policy"""
         c = self.__cachedb.cursor()
+        print policy.to
         # I don't like updates.
         # TODO: use updates and make `domain` a primary key
-        c.execute('INSERT INTO sts_cache ( domain, sts_record, timestamp ) VALUES (?, ?, ?)', ( policy.domain, policy.sts_record, policy.now, ) )
-        c.execute('DELETE from sts_cache WHERE domain = ? AND timestamp < ? ', ( policy.domain, policy.now, ) )
+        c.execute('INSERT INTO sts_cache ( domain, tls_only, sts_record, expires ) VALUES (?, ?, ?, ?)',
+                ( policy.domain, str(policy.to), policy.sts_record, policy.expires, ) )
+        c.execute('DELETE from sts_cache WHERE domain = ? AND expires < ? ', ( policy.domain, policy.now, ) )
         self.__cachedb.commit()
         self.output += "Updated Cache; "
 
@@ -242,13 +247,16 @@ class SmtpSts(object): # {{{
 
 if __name__ == "__main__":
 
-    parser = argparse.ArgumentParser(description='Verify SMTP-STS')
-    parser.add_argument( '-d', '--domain',      metavar='DOMAIN',   type=str,   help='domain to test' )
-    parser.add_argument( '-s', '--smtp-sts',    metavar='TXT',      type=str,   help='_smtp-sts TXT record' )
-    parser.add_argument( '-m', '--mx',          metavar='MX',       type=str,  help='MXes (multiple times possible)', action="append" )
-    parser.add_argument( '-c', '--cachedb',     metavar='FILENAME', type=str,   help='sqlite3 cachedb', default="/tmp/smtp-sts-cache.sqlite3" )
-    parser.add_argument( '-D', '--dnssec',      action='store_true', help='DNSSEC was used used' )
-    parser.add_argument( '-v', '--verbose',     action='store_true', help='verbose output' )
+    parser = argparse.ArgumentParser(
+        description='Verify SMTP-STS',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+    parser.add_argument( '-d', '--domain',      metavar='D',    type=str,   help='domain to test',          required=True )
+    parser.add_argument( '-s', '--smtp-sts',    metavar='TXT',  type=str,   help='_smtp-sts TXT record',    required=True )
+    parser.add_argument( '-m', '--mx',          metavar='MX',   type=str,   help='MXes',                    required=True, action="append" )
+    parser.add_argument( '-c', '--cachedb',     metavar='FILE', type=str,   help='sqlite3 cachedb',         default="/var/tmp/smtp-sts-cache.db" )
+    parser.add_argument( '-D', '--dnssec',                                  help='DNSSEC was used used',    action='store_true' )
+    parser.add_argument( '-v', '--verbose',                                 help='verbose output',          action='store_true' )
     args = parser.parse_args()
 
     s = SmtpSts(args.domain, args.mx, args.smtp_sts, args.cachedb, args.verbose)
