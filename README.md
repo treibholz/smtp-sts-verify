@@ -58,7 +58,7 @@ DOMAIN_IS_CACHED_STS_TRUE = ${lookup sqlite {/var/tmp/smtp-sts-cache.db \
 
 add this to your remote_smtp transport:
 
-```
+```INI
 # Try to use TLS everywhere
 tls_try_verify_hosts = *
 # This is your local CA store
