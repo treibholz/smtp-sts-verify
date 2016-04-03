@@ -33,12 +33,14 @@ Copy verify.py to /usr/local/bin/.
 
 add these macros to your exim configuration:
 
-```
+```INI
+# lookup the _smtp-sts TXT-record of the domain
 SMTP_STS_DOMAIN_TXT = ${lookup dnsdb{>: dnssec_lax,txt=_smtp-sts.$domain} \
                             {$value}\
                             {0}\
                         }
 
+# verify the STS-record against the cache/webpki
 SMTP_STS_DOMAIN_VERIFY = ${run{\
                             /usr/local/bin/verify.py \
                                 -d $domain \
@@ -47,6 +49,7 @@ SMTP_STS_DOMAIN_VERIFY = ${run{\
                             }{GOOD: $value}{BAD: $value}\
                         }
 
+# check the cache for the domain
 DOMAIN_IS_CACHED_STS_TRUE = ${lookup sqlite {/var/tmp/smtp-sts-cache.db \
                                 select tls_only from sts_cache where \
                                     domain = '${quote_sqlite:$domain}' and \
