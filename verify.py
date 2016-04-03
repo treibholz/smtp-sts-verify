@@ -141,7 +141,7 @@ class SmtpSts(object): # {{{
         result = c.fetchone()
         if result:
             p = StsPolicy( domain = self.domain, sts_record = result[0], cached_since = result[1] )
-            self.output += "Found in Cache; "
+            self.output += "Cached; "
         return p
 
     def cache(self, policy):
@@ -166,7 +166,8 @@ class SmtpSts(object): # {{{
         # TODO: Exceptionhandling, if SSL fails, don't crash.
         sts_record = requests.get(uri).text
         p = StsPolicy(self.domain, sts_record)
-        self.output += "Fetched Policy from webpki; "
+        if self.verbose: print "got webpki;"
+        self.output += "got webpki; "
         return p
 
     def validate_mx(self, policy):
@@ -187,10 +188,13 @@ class SmtpSts(object): # {{{
             for r_mx in r_MX:
                 if r_MX_patterns[r_mx].match(d_mx):
                     passed = True
-                    if self.verbose: print '"%s" matches "%s"' % (d_mx, r_mx, )
-                    self.output += '"%s" matches "%s"; ' % (d_mx, r_mx, )
+                    #if self.verbose: print 'OK: "%s" matches "%s"' % (d_mx, r_mx, )
+                    if self.verbose: print 'MX matches policy; '
+                    #self.output += 'OK: "%s" matches "%s"; ' % (d_mx, r_mx, )
+                    self.output += 'MX matches policy; '
                 else:
-                    if self.verbose: print '"%s" does not match "%s"' % (d_mx, r_mx, )
+                    if self.verbose: print 'FAIL: "%s" does not match "%s"' % (d_mx, r_mx, )
+                    self.output += 'FAIL: "%s" does not match "%s"' % (d_mx, r_mx, )
 
         return passed
 
@@ -200,37 +204,43 @@ class SmtpSts(object): # {{{
         update_cache = False
         return_code = 0
 
-        policy       = self.policy_from_cache()
+        policy = self.policy_from_cache()
         if not policy or policy.expired():
+            if not policy:
+                if self.verbose: print "no cache"
+                self.output += "no cache; "
+            elif policy.expired():
+                if self.verbose: print "cache expired"
+                self.output += "cache expired; "
 
-            if self.verbose: print "cache expired or no policy yet"
-            self.output += "cache expired or no policy yet; "
             dns = self.policy_from_dns()
+
             if dns.is_policy:
-                self.output += "Policy in DNS Found; "
+                if self.verbose: print "policy in DNS;"
+                self.output += "policy in DNS; "
                 if dns.a['webpki']: # Authenticate via WebPKI
                     auth = self.policy_from_webpki(dns.a['webpki'])
 
                     if dns.get_policy() == auth.get_policy():
-                        if self.verbose: print "Policys from DNS and WebPKI match: OK"
-                        self.output += "Policys from DNS and WebPKI match: OK; "
+                        if self.verbose: print "DNS and WebPKI match;"
+                        self.output += "DNS and WebPKI match; "
                         # if they match, dns is the new policy
                         policy = dns
                         update_cache = True
                     else:
-                        if self.verbose: print "Policys from DNS and WebPKI match: Failed"
-                        self.output += "Policys from DNS and WebPKI match: Failed; "
+                        if self.verbose: print "FAIL: DNS and WebPKI mismatch;"
+                        self.output += "FAIL: DNS and WebPKI mismatch; "
                         return False
 
                 elif dns.a['dnssec']: # Authenticate via dnssec
-                    self.output += "Policys from DNS and DNSSEC match: OK; "
+                    self.output += "DNS and DNSSEC match; "
 
                 else:
-                    self.output += "Policys from DNS and ???? don't match: FAILED; "
+                    self.output += "FAIL: DNS and ???? don't mismatch; "
                     return False
 
             else:
-                self.output += "No Policy in DNS Found - No smtp-sts validation wanted; "
+                self.output += "No STS Policy; "
                 return True
 
         else:
